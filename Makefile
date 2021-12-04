@@ -1,5 +1,8 @@
 run:
-	gcc talker.c -o talker
-	gcc listener.c -o listener
-	gcc client.c -o client
 	gcc server.c -o server
+	gcc sender.c -o sender
+	gcc rev.c -o rev
+	gcc senderDemo.c -o senderDemo
+
+clean:
+	ls | grep -v "\.\|Makefile" | xargs rm
