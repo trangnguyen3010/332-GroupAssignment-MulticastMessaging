@@ -25,8 +25,14 @@
 int new_fd;
 
 int revListening();
-int revSocket(int sockfd);
+void *acceptRev(void *arg);
+void * sendToRev();
+
+int sendListening();
+void *acceptSender(void *arg);
 void *revFromSender(void *arg);
+
+int revSocket(int sockfd); //just here to sends the message to a receiver, need to write sendToRev() to send to multiple receivers
 
 void sigchld_handler(int s)
 {
@@ -147,7 +153,7 @@ void *acceptSender(void *arg)
         inet_ntop(their_addr.ss_family,
                   get_in_addr((struct sockaddr *)&their_addr),
                   s, sizeof s);
-        printf("server: got connection from %s\n", s);
+        printf("server: got sender connection from %s\n", s);
 
         // x would be the port of the new sender
         int x = (int)(((struct sockaddr_in6 *)&their_addr)->sin6_port);
@@ -208,7 +214,7 @@ void *revFromSender(void *arg)
             // // send a message
             // if (!fork())
             // { // this is the child process
-            //     close(oldsocketfd);
+            //     close(revListenSocket);
             //     if (send(revsocketfd, str, strlen(str), 0) == -1)
             //         perror("send");
             //     close(revsocketfd);
@@ -228,7 +234,15 @@ int main(void)
     char s[INET6_ADDRSTRLEN]; // The IP address of the senders
 
     sockfd = sendListening();
-    printf("orginal sockfd:%d\n", sockfd);
+
+    //  THREAD TO ACCEPT NEW SENDER CONNECTIONS
+    pthread_attr_t tattr;
+    pthread_t accept_sender_t;
+    int ret;
+    // detached thread
+    ret = pthread_attr_init(&tattr);
+    ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+    ret = pthread_create(&accept_sender_t, &tattr, &acceptSender, &sockfd);
 
     struct sockaddr_storage their_addr; // connector's address information
     socklen_t sin_size;
@@ -243,15 +257,6 @@ int main(void)
         return -1;
     }
 
-    pthread_attr_t tattr;
-    pthread_t accept_sender_t;
-    int ret;
-
-    /* initialized with default attributes */
-    ret = pthread_attr_init(&tattr);
-    ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
-    ret = pthread_create(&accept_sender_t, &tattr, &acceptSender, &sockfd);
-
     inet_ntop(their_addr.ss_family,
               get_in_addr((struct sockaddr *)&their_addr),
               s, sizeof s);
@@ -265,8 +270,13 @@ int main(void)
     int numbytes, total;
     char buf[MAXDATASIZE];
 
-    int oldsocketfd = revListening();
-    int revsocketfd = revSocket(oldsocketfd);
+    int revListenSocket = revListening();
+
+    pthread_t accept_rev_t;
+    // THREAD TO ACCEPT NEW RECEIVER CONNECTION
+    ret = pthread_create(&accept_rev_t, &tattr, &acceptRev, &revListenSocket);
+
+    int revsocketfd = revSocket(revListenSocket);
     while (1)
     { // main accept() loop
         if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1)
@@ -293,7 +303,7 @@ int main(void)
             // send a message
             if (!fork())
             { // this is the child process
-                close(oldsocketfd);
+                close(revListenSocket);
                 if (send(revsocketfd, str, strlen(str), 0) == -1)
                     perror("send");
                 close(revsocketfd);
@@ -306,7 +316,7 @@ int main(void)
     }
 
     free(sender_port); // free the str sender_port
-    close(oldsocketfd);
+    close(revListenSocket);
     close(revsocketfd);
     close(sockfd);
     close(new_fd); // parent doesn't need this
@@ -408,22 +418,22 @@ void *acceptRev(void *arg){
         inet_ntop(their_addr.ss_family,
                   get_in_addr((struct sockaddr *)&their_addr),
                   s, sizeof s);
-        printf("server: got connection from %s\n", s);
+        printf("server: got receiver connection from %s\n", s);
 
-        // Create a thread for this receiver connection
-        pthread_attr_t tattr;
-        pthread_t rev_connection;
-        int ret;
+        // // Create a thread for this receiver connection
+        // pthread_attr_t tattr;
+        // pthread_t rev_connection;
+        // int ret;
 
-        /* initialized with default attributes */
-        ret = pthread_attr_init(&tattr);
-        ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
-        ret = pthread_create(&rev_connection, &tattr, &revFromSender, NULL);
+        // /* initialized with default attributes */
+        // ret = pthread_attr_init(&tattr);
+        // ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+        // ret = pthread_create(&rev_connection, &tattr, &revFromSender, NULL);
     }
 }
 
 void * sendToRev(){
-
+    return 0;
 }
 
 // setting up everything to connect to a rev socket
