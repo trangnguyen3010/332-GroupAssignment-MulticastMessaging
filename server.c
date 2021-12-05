@@ -275,7 +275,7 @@ int main(void)
     pthread_t accept_rev_t;
     // THREAD TO ACCEPT NEW RECEIVER CONNECTION
     ret = pthread_create(&accept_rev_t, &tattr, &acceptRev, &revListenSocket);
-
+    
     int revsocketfd = revSocket(revListenSocket);
     while (1)
     { // main accept() loop
