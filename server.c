@@ -14,6 +14,7 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <pthread.h>
 
 #define SENDPORT "3490" // the port users will be connecting to
 #define REVPORT "4950"  // the port users will be connecting to
@@ -21,7 +22,11 @@
 #define BACKLOG 10 // how many pending connections queue will hold
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
-int revSocket(int *buf);
+int new_fd;
+
+int revListening();
+int revSocket(int sockfd);
+void *revFromSender(void *arg);
 
 void sigchld_handler(int s)
 {
@@ -47,15 +52,13 @@ void *get_in_addr(struct sockaddr *sa)
     return &(((struct sockaddr_in6 *)sa)->sin6_addr);
 }
 
-int main(void)
+// return the listen()ing socket descriptor for listening for new incoming sender connections
+int sendListening()
 {
     int sockfd, new_fd; // listen on sock_fd, new connection on new_fd
     struct addrinfo hints, *servinfo, *p;
-    struct sockaddr_storage their_addr; // connector's address information
-    socklen_t sin_size;
     struct sigaction sa;
     int yes = 1;
-    char s[INET6_ADDRSTRLEN]; // The IP address of the senders
     int rv;
 
     memset(&hints, 0, sizeof hints);
@@ -70,7 +73,7 @@ int main(void)
         return 1;
     }
 
-    // loop through all the results and bind to the first sender we can
+    // loop through all the results and bind to the socket we can
     for (p = servinfo; p != NULL; p = p->ai_next)
     {
         if ((sockfd = socket(p->ai_family, p->ai_socktype,
@@ -113,6 +116,123 @@ int main(void)
 
     printf("server: waiting for connections...\n");
 
+    return sockfd;
+}
+
+struct connection
+{
+    int socket;
+    char* prefix;
+};
+
+void *acceptSender(void *arg)
+{
+    int *addr = arg;
+    int sockfd = *addr;
+    int new_connection;
+
+    struct sockaddr_storage their_addr; // connector's address information
+    socklen_t sin_size;
+    char s[INET6_ADDRSTRLEN]; // The IP address of the senders
+    for (;;)
+    {
+        new_connection = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
+        if (new_connection == -1)
+        {
+            perror("accept");
+            continue;
+        }
+
+        // s would be the IP address of the new sender
+        inet_ntop(their_addr.ss_family,
+                  get_in_addr((struct sockaddr *)&their_addr),
+                  s, sizeof s);
+        printf("server: got connection from %s\n", s);
+
+        // x would be the port of the new sender
+        int x = (int)(((struct sockaddr_in6 *)&their_addr)->sin6_port);
+        int length = snprintf(NULL, 0, "%d", x); //length of x
+
+        // make the prefix
+        int total_length = length + sizeof(char) * strlen(s) + 4;
+        char *prefix = (char *)calloc(total_length, sizeof(char));
+        snprintf(prefix, total_length + 1, "%s, %d: ", s, x);
+        printf("New Connection:%s\n", prefix);
+        
+        struct connection* con = (struct connection*) malloc(sizeof(struct connection));
+        con->socket = new_connection;
+        con->prefix = prefix;
+        // Create a thread for this sender connection
+        pthread_attr_t tattr;
+        pthread_t sender_connection;
+        int ret;
+
+        /* initialized with default attributes */
+        ret = pthread_attr_init(&tattr);
+        ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+        ret = pthread_create(&sender_connection, &tattr, &revFromSender, con);
+    }
+}
+
+void *revFromSender(void *arg)
+{
+    int new_fd = ((struct connection*) arg)->socket;
+    char* prefix = ((struct connection*) arg)->prefix;
+    printf("new socket: %d, new prefix:%s\n", new_fd, prefix);
+    free(arg);
+
+    int numbytes, total;
+    char buf[MAXDATASIZE];
+
+    while (1)
+    { // main accept() loop
+        if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1)
+        {
+            perror("recv");
+            exit(1);
+        }
+        if (numbytes != 0)
+        {
+            buf[numbytes] = '\0';
+            printf("server: received '%s'\n", buf);
+
+            // concatenate the strings to be in the form "hostname, port: message"
+            total = strlen(prefix) + numbytes + 4;
+            char *str = (char *)calloc(total, sizeof(char));
+            strncat(str, prefix, strlen(prefix));
+            strncat(str, buf, numbytes);
+            str[total - 1] = '\0';
+            printf("You entered '%s', which has %d chars.%zu\n", str, total, strlen(str));
+
+            //TO-DO: for-loop through the clients and send message
+            // // send a message
+            // if (!fork())
+            // { // this is the child process
+            //     close(oldsocketfd);
+            //     if (send(revsocketfd, str, strlen(str), 0) == -1)
+            //         perror("send");
+            //     close(revsocketfd);
+            //     exit(0);
+            // }
+
+            free(str);
+            str = 0;
+        }
+    }
+    free(prefix);
+}
+
+int main(void)
+{
+    int new_fd, sockfd;
+    char s[INET6_ADDRSTRLEN]; // The IP address of the senders
+
+    sockfd = sendListening();
+    printf("orginal sockfd:%d\n", sockfd);
+
+    struct sockaddr_storage their_addr; // connector's address information
+    socklen_t sin_size;
+
     //connect with a sender socket
     sin_size = sizeof their_addr;
     new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
@@ -122,6 +242,15 @@ int main(void)
         //continue;
         return -1;
     }
+
+    pthread_attr_t tattr;
+    pthread_t accept_sender_t;
+    int ret;
+
+    /* initialized with default attributes */
+    ret = pthread_attr_init(&tattr);
+    ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+    ret = pthread_create(&accept_sender_t, &tattr, &acceptSender, &sockfd);
 
     inet_ntop(their_addr.ss_family,
               get_in_addr((struct sockaddr *)&their_addr),
@@ -136,10 +265,8 @@ int main(void)
     int numbytes, total;
     char buf[MAXDATASIZE];
 
-    int revSocketList[2];
-    revSocket(revSocketList);
-    int oldsocketfd = revSocketList[0];
-    int revsocketfd = revSocketList[1];
+    int oldsocketfd = revListening();
+    int revsocketfd = revSocket(oldsocketfd);
     while (1)
     { // main accept() loop
         if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1)
@@ -165,7 +292,7 @@ int main(void)
 
             // send a message
             if (!fork())
-            {                  // this is the child process
+            { // this is the child process
                 close(oldsocketfd);
                 if (send(revsocketfd, str, strlen(str), 0) == -1)
                     perror("send");
@@ -187,15 +314,11 @@ int main(void)
     return 0;
 }
 
-int revSocket(int *buf)
-{
-    int sockfd, new_fd; // listen on sock_fd, new connection on new_fd
+int revListening(){
+    int sockfd; // listen on sock_fd
     struct addrinfo hints, *servinfo, *p;
-    struct sockaddr_storage their_addr; // connector's address information
-    socklen_t sin_size;
     struct sigaction sa;
     int yes = 1;
-    char s[INET6_ADDRSTRLEN];
     int rv;
 
     memset(&hints, 0, sizeof hints);
@@ -260,8 +383,57 @@ int revSocket(int *buf)
         exit(1);
     }
 
-    printf("server: waiting for connections...\n");
+    printf("server-receiver: waiting for connections...\n");
+    return sockfd;
+}
 
+void *acceptRev(void *arg){
+    int *addr = arg;
+    int sockfd = *addr;
+    int new_connection;
+
+    struct sockaddr_storage their_addr; // connector's address information
+    socklen_t sin_size;
+    char s[INET6_ADDRSTRLEN]; // The IP address of the receiver
+    for (;;)
+    {
+        new_connection = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
+        if (new_connection == -1)
+        {
+            perror("accept");
+            continue;
+        }
+
+        // s would be the IP address of the new receiver
+        inet_ntop(their_addr.ss_family,
+                  get_in_addr((struct sockaddr *)&their_addr),
+                  s, sizeof s);
+        printf("server: got connection from %s\n", s);
+
+        // Create a thread for this receiver connection
+        pthread_attr_t tattr;
+        pthread_t rev_connection;
+        int ret;
+
+        /* initialized with default attributes */
+        ret = pthread_attr_init(&tattr);
+        ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+        ret = pthread_create(&rev_connection, &tattr, &revFromSender, NULL);
+    }
+}
+
+void * sendToRev(){
+
+}
+
+// setting up everything to connect to a rev socket
+// a list of 2 integers
+// post-condition: buf has the first one is the old socket and the second is the new socket
+int revSocket(sockfd)
+{
+    struct sockaddr_storage their_addr; // connector's address information
+    socklen_t sin_size;
+    char s[INET6_ADDRSTRLEN];
     //connect with a socket
     sin_size = sizeof their_addr;
     new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
@@ -276,8 +448,5 @@ int revSocket(int *buf)
               get_in_addr((struct sockaddr *)&their_addr),
               s, sizeof s);
     printf("server: got connection from %s\n", s);
-
-    buf[0] = sockfd;
-    buf[1] = new_fd;
-    return 0;
+    return new_fd;
 }
