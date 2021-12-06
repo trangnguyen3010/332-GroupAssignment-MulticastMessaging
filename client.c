@@ -94,6 +94,7 @@ int main(int argc, char *argv[])
             perror("recv");
             exit(1);
         }
+        
         if (numbytes != 0)
         {
             buf[numbytes] = '\0';

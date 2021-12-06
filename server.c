@@ -2,6 +2,7 @@
 ** server.c -- a stream socket server demo
 */
 
+#include "message_buffer.c"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -24,6 +25,10 @@
 #define MAXDATASIZE 100 // max number of bytes we can get at once
 int new_fd;
 
+node_t *msg_queue = NULL;
+pthread_mutex_t queue_lock;
+
+
 int revListening();
 void *acceptRev(void *arg);
 void * sendToRev();
@@ -33,6 +38,27 @@ void *acceptSender(void *arg);
 void *revFromSender(void *arg);
 
 int revSocket(int sockfd); //just here to sends the message to a receiver, need to write sendToRev() to send to multiple receivers
+
+int init(){
+    int queuelock = pthread_mutex_init(&queue_lock, 0);
+
+    return queuelock;
+}
+
+int enqueue(char *msg){
+    pthread_mutex_lock(&queue_lock);
+    printf("enqueued msg: %s\n", msg);
+    add_msg(&msg_queue, msg);
+    pthread_mutex_unlock(&queue_lock);
+    return 0;
+}
+
+char *dequeue(){
+    pthread_mutex_lock(&queue_lock);
+    char *msg = get_msg(&msg_queue);
+    pthread_mutex_unlock(&queue_lock);
+    return msg;
+}
 
 void sigchld_handler(int s)
 {
@@ -208,6 +234,7 @@ void *revFromSender(void *arg)
             strncat(str, prefix, strlen(prefix));
             strncat(str, buf, numbytes);
             str[total - 1] = '\0';
+            // enqueue(str);
             printf("You entered '%s', which has %d chars.%zu\n", str, total, strlen(str));
 
             //TO-DO: for-loop through the clients and send message
@@ -226,102 +253,6 @@ void *revFromSender(void *arg)
         }
     }
     free(prefix);
-}
-
-int main(void)
-{
-    int new_fd, sockfd;
-    char s[INET6_ADDRSTRLEN]; // The IP address of the senders
-
-    sockfd = sendListening();
-
-    //  THREAD TO ACCEPT NEW SENDER CONNECTIONS
-    pthread_attr_t tattr;
-    pthread_t accept_sender_t;
-    int ret;
-    // detached thread
-    ret = pthread_attr_init(&tattr);
-    ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
-    ret = pthread_create(&accept_sender_t, &tattr, &acceptSender, &sockfd);
-
-    struct sockaddr_storage their_addr; // connector's address information
-    socklen_t sin_size;
-
-    //connect with a sender socket
-    sin_size = sizeof their_addr;
-    new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
-    if (new_fd == -1)
-    {
-        perror("accept");
-        //continue;
-        return -1;
-    }
-
-    inet_ntop(their_addr.ss_family,
-              get_in_addr((struct sockaddr *)&their_addr),
-              s, sizeof s);
-    printf("server: got connection from %s\n", s);
-
-    int x = (int)(((struct sockaddr_in6 *)&their_addr)->sin6_port);
-    int length = snprintf(NULL, 0, "%d", x);
-    char *sender_port = malloc(length + 1);
-    snprintf(sender_port, length + 1, "%d", x);
-
-    int numbytes, total;
-    char buf[MAXDATASIZE];
-
-    int revListenSocket = revListening();
-
-    pthread_t accept_rev_t;
-    // THREAD TO ACCEPT NEW RECEIVER CONNECTION
-    ret = pthread_create(&accept_rev_t, &tattr, &acceptRev, &revListenSocket);
-    
-    int revsocketfd = revSocket(revListenSocket);
-    while (1)
-    { // main accept() loop
-        if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1)
-        {
-            perror("recv");
-            exit(1);
-        }
-        if (numbytes != 0)
-        {
-            buf[numbytes] = '\0';
-            printf("server: received '%s'\n", buf);
-
-            // concatenate the strings to be in the form "hostname, port: message"
-            total = strlen(s) + strlen(sender_port) + numbytes + 4;
-            char *str = (char *)calloc(total, sizeof(char));
-            strncat(str, s, strlen(s));
-            strncat(str, ", ", 2);
-            strncat(str, sender_port, strlen(sender_port));
-            strncat(str, ": ", 2);
-            strncat(str, buf, numbytes);
-            str[total - 1] = '\0';
-            printf("You entered '%s', which has %d chars.%zu\n", str, total, strlen(str));
-
-            // send a message
-            if (!fork())
-            { // this is the child process
-                close(revListenSocket);
-                if (send(revsocketfd, str, strlen(str), 0) == -1)
-                    perror("send");
-                close(revsocketfd);
-                exit(0);
-            }
-
-            free(str);
-            str = 0;
-        }
-    }
-
-    free(sender_port); // free the str sender_port
-    close(revListenSocket);
-    close(revsocketfd);
-    close(sockfd);
-    close(new_fd); // parent doesn't need this
-
-    return 0;
 }
 
 int revListening(){
@@ -459,4 +390,103 @@ int revSocket(sockfd)
               s, sizeof s);
     printf("server: got connection from %s\n", s);
     return new_fd;
+}
+
+int main(void)
+{
+    init();
+    int new_fd, sockfd;
+    char s[INET6_ADDRSTRLEN]; // The IP address of the senders
+
+    sockfd = sendListening();
+
+    //  THREAD TO ACCEPT NEW SENDER CONNECTIONS
+    pthread_attr_t tattr;
+    pthread_t accept_sender_t;
+    int ret;
+    // detached thread
+    ret = pthread_attr_init(&tattr);
+    ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+    ret = pthread_create(&accept_sender_t, &tattr, &acceptSender, &sockfd);
+
+    struct sockaddr_storage their_addr; // connector's address information
+    socklen_t sin_size;
+
+    //connect with a sender socket
+    sin_size = sizeof their_addr;
+    new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
+    if (new_fd == -1)
+    {
+        perror("accept");
+        //continue;
+        return -1;
+    }
+
+    inet_ntop(their_addr.ss_family,
+              get_in_addr((struct sockaddr *)&their_addr),
+              s, sizeof s);
+    printf("server: got connection from %s\n", s);
+
+    int x = (int)(((struct sockaddr_in6 *)&their_addr)->sin6_port);
+    int length = snprintf(NULL, 0, "%d", x);
+    char *sender_port = malloc(length + 1);
+    snprintf(sender_port, length + 1, "%d", x);
+
+    int numbytes, total;
+    char buf[MAXDATASIZE];
+
+    int revListenSocket = revListening();
+
+    pthread_t accept_rev_t;
+    // THREAD TO ACCEPT NEW RECEIVER CONNECTION
+    ret = pthread_create(&accept_rev_t, &tattr, &acceptRev, &revListenSocket);
+    
+    int revsocketfd = revSocket(revListenSocket);
+    while (1)
+    { // main accept() loop
+        if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1)
+        {
+            perror("recv");
+            exit(1);
+        }
+        if (numbytes != 0)
+        {
+            buf[numbytes] = '\0';
+            printf("server: received '%s'\n", buf);
+
+            // concatenate the strings to be in the form "hostname, port: message"
+            total = strlen(s) + strlen(sender_port) + numbytes + 4;
+            char *str = (char *)calloc(total, sizeof(char));
+            strncat(str, s, strlen(s));
+            strncat(str, ", ", 2);
+            strncat(str, sender_port, strlen(sender_port));
+            strncat(str, ": ", 2);
+            strncat(str, buf, numbytes);
+            str[total - 1] = '\0';
+            enqueue(str);
+            printf("You entered '%s', which has %d chars.%zu\n", str, total, strlen(str));
+
+            // send a message
+            if (!fork())
+            { // this is the child process
+                close(revListenSocket);
+                char *out_msg = dequeue();
+                if (send(revsocketfd, out_msg, strlen(str), 0) == -1)
+                    perror("send");
+                close(revsocketfd);
+                exit(0);
+            }
+
+            free(str);
+            str = 0;
+        }
+    }
+
+    free(sender_port); // free the str sender_port
+    close(revListenSocket);
+    close(revsocketfd);
+    close(sockfd);
+    close(new_fd); // parent doesn't need this
+
+    return 0;
 }
