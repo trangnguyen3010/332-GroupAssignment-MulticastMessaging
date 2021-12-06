@@ -41,7 +41,6 @@ int revSocket(int sockfd); //just here to sends the message to a receiver, need 
 
 int init(){
     int queuelock = pthread_mutex_init(&queue_lock, 0);
-
     return queuelock;
 }
 
@@ -395,6 +394,8 @@ int revSocket(sockfd)
 int main(void)
 {
     init();
+
+
     int new_fd, sockfd;
     char s[INET6_ADDRSTRLEN]; // The IP address of the senders
 
@@ -467,10 +468,10 @@ int main(void)
             printf("You entered '%s', which has %d chars.%zu\n", str, total, strlen(str));
 
             // send a message
+            char *out_msg = dequeue();
             if (!fork())
             { // this is the child process
                 close(revListenSocket);
-                char *out_msg = dequeue();
                 if (send(revsocketfd, out_msg, strlen(str), 0) == -1)
                     perror("send");
                 close(revsocketfd);

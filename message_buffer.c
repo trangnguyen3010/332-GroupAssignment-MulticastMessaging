@@ -6,6 +6,7 @@ typedef struct node {
     struct node *next;
 } node_t;
 
+
 int add_msg(node_t **head, char *message) {
     node_t *new_node = malloc(sizeof(node_t));
     if (!new_node){
@@ -41,5 +42,6 @@ char *get_msg(node_t **head) {
     else
         *head = NULL;
 
+    
     return msg;
 }
