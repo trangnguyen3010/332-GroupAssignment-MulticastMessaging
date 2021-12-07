@@ -23,14 +23,16 @@
 #define BACKLOG 10 // how many pending connections queue will hold
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
+#define MAXRECEIVERS 10
 int new_fd;
 
-node_t *msg_queue = NULL;
-pthread_mutex_t queue_lock;
+pthread_mutex_t counter_lock;
+pthread_cond_t msg_cond;
 
 int receiver_thread_counter;
 int num_received;
 
+int receiver_socket[MAXRECEIVERS];
 
 int revListening();
 void *acceptRev(void *arg);
@@ -43,31 +45,12 @@ void *revFromSender(void *arg);
 int revSocket(int sockfd); //just here to sends the message to a receiver, need to write sendToRev() to send to multiple receivers
 
 int init(){
-    int queuelock = pthread_mutex_init(&queue_lock, 0);
+    int ret1 = pthread_mutex_init(&counter_lock, 0);
     receiver_thread_counter = 0;
     num_received = 0;
-    return queuelock;
+    return ret | ret1;
 }
 
-int enqueue(char *msg){
-    pthread_mutex_lock(&queue_lock);
-    printf("enqueued msg: %s\n", msg);
-    add_msg(&msg_queue, msg);
-    printf("before message queue: ");
-    print_list(msg_queue);
-    pthread_mutex_unlock(&queue_lock);
-    return 0;
-}
-
-char *dequeue(){
-    pthread_mutex_lock(&queue_lock);
-
-    char *msg = get_msg(&msg_queue);
-    printf("after message queue: ");
-    print_list(msg_queue);
-    pthread_mutex_unlock(&queue_lock);
-    return msg;
-}
 
 void sigchld_handler(int s)
 {
@@ -243,19 +226,21 @@ void *revFromSender(void *arg)
             strncat(str, prefix, strlen(prefix));
             strncat(str, buf, numbytes);
             str[total - 1] = '\0';
-            enqueue(str);
             printf("You entered '%s', which has %d chars.%zu\n", str, total, strlen(str));
 
-            //TO-DO: for-loop through the clients and send message
-            // // send a message
-            // if (!fork())
-            // { // this is the child process
-            //     close(revListenSocket);
-            //     if (send(revsocketfd, str, strlen(str), 0) == -1)
-            //         perror("send");
-            //     close(revsocketfd);
-            //     exit(0);
-            // }
+
+            // send a message
+            for(int i = 0; i<receiver_thread_counter; i++){
+            if (!fork())
+            { // this is the child process
+            
+                    if (send(receiver_socket[i], str, strlen(str), 0) == -1)
+                        perror("send");
+                    close(receiver_socket[i]);
+                    exit(0);
+                    
+                }
+            }
 
             free(str);
             str = 0;
@@ -360,6 +345,11 @@ void *acceptRev(void *arg){
                   s, sizeof s);
         printf("server: got receiver connection from %s\n", s);
 
+        pthread_mutex_lock(&counter_lock);
+        receiver_socket[receiver_thread_counter] = new_connection;
+        receiver_thread_counter++;
+        pthread_mutex_unlock(&counter_lock);
+
         // // Create a thread for this receiver connection
         // pthread_attr_t tattr;
         // pthread_t rev_connection;
@@ -420,6 +410,7 @@ int main(void)
     ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
     ret = pthread_create(&accept_sender_t, &tattr, &acceptSender, &sockfd);
 
+
     struct sockaddr_storage their_addr; // connector's address information
     socklen_t sin_size;
 
@@ -451,10 +442,12 @@ int main(void)
     pthread_t accept_rev_t;
     // THREAD TO ACCEPT NEW RECEIVER CONNECTION
     ret = pthread_create(&accept_rev_t, &tattr, &acceptRev, &revListenSocket);
-    receiver_thread_counter++;
-    printf("receiver threads: %d\n", receiver_thread_counter);
-    
+
     int revsocketfd = revSocket(revListenSocket);
+    pthread_mutex_lock(&counter_lock);
+    receiver_socket[receiver_thread_counter] = revsocketfd;
+    receiver_thread_counter++;
+    pthread_mutex_unlock(&counter_lock);
     while (1)
     { // main accept() loop
         if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1)
@@ -476,19 +469,22 @@ int main(void)
             strcat(str, ": ");
             strncat(str, buf, numbytes);
             str[total - 1] = '\0';
-            enqueue(str);
             printf("You entered '%s', which has %d chars.%zu\n", str, total, strlen(str));
 
             // send a message
-            char *out_msg = dequeue();
+            for(int i = 0; i<receiver_thread_counter; i++){
             if (!fork())
             { // this is the child process
-                close(revListenSocket);
-                if (send(revsocketfd, out_msg, strlen(str), 0) == -1)
+                pthread_mutex_lock(&counter_lock);
+                if (send(receiver_socket[i], str, strlen(str), 0) == -1)
                     perror("send");
-                // close(revsocketfd);
+                close(receiver_socket[i]);
+                pthread_mutex_unlock(&counter_lock);
                 exit(0);
             }
+            
+            }
+            close(revListenSocket);
 
             free(str);
             str = 0;
