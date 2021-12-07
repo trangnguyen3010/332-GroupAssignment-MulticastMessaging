@@ -28,6 +28,9 @@ int new_fd;
 node_t *msg_queue = NULL;
 pthread_mutex_t queue_lock;
 
+int receiver_thread_counter;
+int num_received;
+
 
 int revListening();
 void *acceptRev(void *arg);
@@ -41,6 +44,8 @@ int revSocket(int sockfd); //just here to sends the message to a receiver, need 
 
 int init(){
     int queuelock = pthread_mutex_init(&queue_lock, 0);
+    receiver_thread_counter = 0;
+    num_received = 0;
     return queuelock;
 }
 
@@ -48,13 +53,18 @@ int enqueue(char *msg){
     pthread_mutex_lock(&queue_lock);
     printf("enqueued msg: %s\n", msg);
     add_msg(&msg_queue, msg);
+    printf("before message queue: ");
+    print_list(msg_queue);
     pthread_mutex_unlock(&queue_lock);
     return 0;
 }
 
 char *dequeue(){
     pthread_mutex_lock(&queue_lock);
+
     char *msg = get_msg(&msg_queue);
+    printf("after message queue: ");
+    print_list(msg_queue);
     pthread_mutex_unlock(&queue_lock);
     return msg;
 }
@@ -233,7 +243,7 @@ void *revFromSender(void *arg)
             strncat(str, prefix, strlen(prefix));
             strncat(str, buf, numbytes);
             str[total - 1] = '\0';
-            // enqueue(str);
+            enqueue(str);
             printf("You entered '%s', which has %d chars.%zu\n", str, total, strlen(str));
 
             //TO-DO: for-loop through the clients and send message
@@ -441,6 +451,8 @@ int main(void)
     pthread_t accept_rev_t;
     // THREAD TO ACCEPT NEW RECEIVER CONNECTION
     ret = pthread_create(&accept_rev_t, &tattr, &acceptRev, &revListenSocket);
+    receiver_thread_counter++;
+    printf("receiver threads: %d\n", receiver_thread_counter);
     
     int revsocketfd = revSocket(revListenSocket);
     while (1)
@@ -459,9 +471,9 @@ int main(void)
             total = strlen(s) + strlen(sender_port) + numbytes + 4;
             char *str = (char *)calloc(total, sizeof(char));
             strncat(str, s, strlen(s));
-            strncat(str, ", ", 2);
+            strcat(str, ", ");
             strncat(str, sender_port, strlen(sender_port));
-            strncat(str, ": ", 2);
+            strcat(str, ": ");
             strncat(str, buf, numbytes);
             str[total - 1] = '\0';
             enqueue(str);
@@ -474,7 +486,7 @@ int main(void)
                 close(revListenSocket);
                 if (send(revsocketfd, out_msg, strlen(str), 0) == -1)
                     perror("send");
-                close(revsocketfd);
+                // close(revsocketfd);
                 exit(0);
             }
 
