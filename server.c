@@ -21,10 +21,10 @@
 #define BACKLOG 10 // how many pending connections queue will hold
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
-#define MAXRECEIVERS 10
+#define MAXRECEIVERS 50
 int new_fd;
 
-pthread_mutex_t counter_lock;
+pthread_mutex_t counter_lock, send_lock;
 pthread_cond_t msg_cond;
 
 int receiver_thread_counter;
@@ -213,10 +213,19 @@ void *revFromSender(void *arg)
 
     while (1)
     { // main accept() loop
-        if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1)
+        if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) <= 0)
         {
+            if(numbytes == 0){
+                printf("server: socket %d closed\n", new_fd);
+            }
+            else{
             perror("recv");
             exit(1);
+            
+            }
+            close(new_fd);
+            continue;
+            
         }
         if (numbytes != 0)
         {
@@ -353,15 +362,6 @@ void *acceptRev(void *arg){
         receiver_thread_counter++;
         pthread_mutex_unlock(&counter_lock);
 
-        // // Create a thread for this receiver connection
-        // pthread_attr_t tattr;
-        // pthread_t rev_connection;
-        // int ret;
-
-        // /* initialized with default attributes */
-        // ret = pthread_attr_init(&tattr);
-        // ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
-        // ret = pthread_create(&rev_connection, &tattr, &revFromSender, NULL);
     }
 }
 
@@ -420,7 +420,6 @@ int main(void)
         perror("Error Pthread_create ");
     }
 
-
     struct sockaddr_storage their_addr; // connector's address information
     socklen_t sin_size;
 
@@ -462,10 +461,19 @@ int main(void)
     pthread_mutex_unlock(&counter_lock);
     while (1)
     { // main accept() loop
-        if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) == -1)
-        {
+        if ((numbytes = recv(new_fd, buf, MAXDATASIZE - 1, 0)) <= 0)
+        {   
+            if(numbytes == 0){
+                printf("server: socket %d closed\n", new_fd);
+            }
+            else{
             perror("recv");
             exit(1);
+            
+            }
+            close(new_fd);
+            continue;
+            
         }
         if (numbytes != 0)
         {

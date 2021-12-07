@@ -1,0 +1,29 @@
+CMPT 332
+Assignment 4
+October December 6, 2021
+Heather Caswell | Trang Nguyen
+hec626 | len054
+
+Startup:
+-Use "make run" to compile 
+-to run the program use "./server" to start the server,
+    "./sender <hostname> 33490" to start a sender,
+    "./client <hostname> 34950" to start a receiver
+-Use "make clean" to remove executables when finished
+
+Summary of functions:
+
+
+Tests run:
+    -tested if server can handle >1 sender.
+    -tested if server will send messages to >1 receiver.
+    -tested closing the senders and receivers.
+    -tested closing the server.
+    -tested sending over 100 characters.
+
+
+Known issues: 
+    -When closing senders, the server turns off.
+    -when closing receivers, the server doesn't free that socket.
+    -There is no buffer in place to hold messages if they are received simultaineously .
+    -when the server is shut off, the senders and receivers continue running.
