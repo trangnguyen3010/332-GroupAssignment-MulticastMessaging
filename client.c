@@ -47,7 +47,8 @@ int main(int argc, char *argv[])
     hints.ai_family = AF_INET6;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
-
+    
+    //listen to IP:argv[1] at port argv[2]
     if ((rv = getaddrinfo(argv[1], argv[2], &hints, &servinfo)) != 0)
     {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
