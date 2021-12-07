@@ -1,8 +1,6 @@
 /*
 ** server.c -- a stream socket server demo
 */
-
-#include "message_buffer.c"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -17,8 +15,8 @@
 #include <signal.h>
 #include <pthread.h>
 
-#define SENDPORT "3490" // the port users will be connecting to
-#define REVPORT "4950"  // the port users will be connecting to
+#define SENDPORT "33490" // the port users will be connecting to
+#define REVPORT "34950"  // the port users will be connecting to
 
 #define BACKLOG 10 // how many pending connections queue will hold
 
@@ -45,10 +43,10 @@ void *revFromSender(void *arg);
 int revSocket(int sockfd); //just here to sends the message to a receiver, need to write sendToRev() to send to multiple receivers
 
 int init(){
-    int ret1 = pthread_mutex_init(&counter_lock, 0);
+    int ret = pthread_mutex_init(&counter_lock, 0);
     receiver_thread_counter = 0;
     num_received = 0;
-    return ret | ret1;
+    return ret;
 }
 
 
@@ -79,9 +77,9 @@ void *get_in_addr(struct sockaddr *sa)
 // return the listen()ing socket descriptor for listening for new incoming sender connections
 int sendListening()
 {
-    int sockfd, new_fd; // listen on sock_fd, new connection on new_fd
+    int sockfd; // listen on sock_fd
     struct addrinfo hints, *servinfo, *p;
-    struct sigaction sa;
+    // struct sigaction sa;
     int yes = 1;
     int rv;
 
@@ -189,12 +187,17 @@ void *acceptSender(void *arg)
         // Create a thread for this sender connection
         pthread_attr_t tattr;
         pthread_t sender_connection;
-        int ret;
 
         /* initialized with default attributes */
-        ret = pthread_attr_init(&tattr);
-        ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
-        ret = pthread_create(&sender_connection, &tattr, &revFromSender, con);
+        if(pthread_attr_init(&tattr) != 0){
+            perror("Error: Pthread_attr_init ");
+        }
+        if(pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED) != 0){
+            perror("Error: Pthread_attr_setdetachstate ");
+        }
+        if(pthread_create(&sender_connection, &tattr, &revFromSender, con) != 0){
+            perror("ErrorK Pthread_create ");
+        }
     }
 }
 
@@ -369,7 +372,7 @@ void * sendToRev(){
 // setting up everything to connect to a rev socket
 // a list of 2 integers
 // post-condition: buf has the first one is the old socket and the second is the new socket
-int revSocket(sockfd)
+int revSocket(int sockfd)
 {
     struct sockaddr_storage their_addr; // connector's address information
     socklen_t sin_size;
@@ -404,11 +407,18 @@ int main(void)
     //  THREAD TO ACCEPT NEW SENDER CONNECTIONS
     pthread_attr_t tattr;
     pthread_t accept_sender_t;
-    int ret;
+
     // detached thread
-    ret = pthread_attr_init(&tattr);
-    ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
-    ret = pthread_create(&accept_sender_t, &tattr, &acceptSender, &sockfd);
+
+    if(pthread_attr_init(&tattr) != 0){
+        perror("Error: Pthread_attr_init ");
+    }
+    if(pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED) != 0){
+        perror("Error: Pthread_attr_setdetachstate ");
+    }
+    if(pthread_create(&accept_sender_t, &tattr, &acceptSender, &sockfd) != 0){
+        perror("Error Pthread_create ");
+    }
 
 
     struct sockaddr_storage their_addr; // connector's address information
@@ -441,7 +451,9 @@ int main(void)
 
     pthread_t accept_rev_t;
     // THREAD TO ACCEPT NEW RECEIVER CONNECTION
-    ret = pthread_create(&accept_rev_t, &tattr, &acceptRev, &revListenSocket);
+    if(pthread_create(&accept_rev_t, &tattr, &acceptRev, &revListenSocket) != 0){
+        perror("ErrorK Pthread_create ");
+    }
 
     int revsocketfd = revSocket(revListenSocket);
     pthread_mutex_lock(&counter_lock);
@@ -480,11 +492,12 @@ int main(void)
                     perror("send");
                 close(receiver_socket[i]);
                 pthread_mutex_unlock(&counter_lock);
+                close(revListenSocket);
                 exit(0);
             }
             
             }
-            close(revListenSocket);
+            
 
             free(str);
             str = 0;

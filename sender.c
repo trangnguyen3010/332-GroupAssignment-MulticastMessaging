@@ -15,7 +15,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 
-#define SENDPORT "3490" // the port users will be connecting to
+#define SENDPORT "33490" // the port users will be connecting to
 
 #define BACKLOG 10 // how many pending connections queue will hold
 
@@ -70,18 +70,17 @@ void print_IP(struct addrinfo *res){
 
 int main(int argc, char *argv[])
 {
-    if (argc != 2)
+    if (argc != 3)
     {
-        fprintf(stderr, "usage: talker hostname\n");
+        fprintf(stderr, "usage: talker hostname port\n");
         exit(1);
     }
 
-    int sockfd, new_fd; // listen on sock_fd, new connection on new_fd
+    int sockfd; // listen on sock_fd
     struct addrinfo hints, *servinfo, *p;
-    struct sockaddr_storage their_addr; // connector's address information
-    socklen_t sin_size;
-    struct sigaction sa;
-    int yes = 1;
+    // struct sockaddr_storage their_addr; // connector's address information
+    // socklen_t sin_size;
+    // struct sigaction sa;
     char s[INET6_ADDRSTRLEN];
     int rv;
 
@@ -91,7 +90,7 @@ int main(int argc, char *argv[])
     hints.ai_protocol = IPPROTO_TCP;
 
     //listen to IP:argv[1] at port SENDPORT
-    if ((rv = getaddrinfo(argv[1], SENDPORT, &hints, &servinfo)) != 0)
+    if ((rv = getaddrinfo(argv[1], argv[2], &hints, &servinfo)) != 0)
     {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
@@ -128,8 +127,6 @@ int main(int argc, char *argv[])
     printf("client: connecting to %s\n", s);
 
     freeaddrinfo(servinfo); // all done with this structure
-
-    int numbytes;
 
     while (1)
     { // main accept() loop
