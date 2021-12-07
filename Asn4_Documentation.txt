@@ -11,8 +11,10 @@ Startup:
     "./client <hostname> 34950" to start a receiver
 -Use "make clean" to remove executables when finished
 
-Summary of functions:
-
+Summary of functionality:
+-Sender: once initiated can send a message to all of the receivers available. Multiple senders can be active at once and they are all able to send to the receivers.
+-Receiver: displays a message sent from any sender, along with where the message came from.
+-Server: Connects to the senders and receivers to facilitate the sending of messages.
 
 Tests run:
     -tested if server can handle >1 sender.
