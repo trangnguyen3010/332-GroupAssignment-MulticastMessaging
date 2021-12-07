@@ -24,7 +24,7 @@
 #define MAXRECEIVERS 50
 int new_fd;
 
-pthread_mutex_t counter_lock, send_lock;
+pthread_mutex_t counter_lock;
 pthread_cond_t msg_cond;
 
 int receiver_thread_counter;
@@ -245,7 +245,6 @@ void *revFromSender(void *arg)
             for(int i = 0; i<receiver_thread_counter; i++){
             if (!fork())
             { // this is the child process
-            
                     if (send(receiver_socket[i], str, strlen(str), 0) == -1)
                         perror("send");
                     close(receiver_socket[i]);
