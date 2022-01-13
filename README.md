@@ -20,13 +20,13 @@ A network includes a server and multiple senders and receivers. Whenever a sende
 -server.c: Connects to the senders and receivers to facilitate the sending of messages.\
 Most important functions:
   
-    void *sendToRev(void *arg)\
-        arg: contains the socket to connect to and the socket to send to\
-        -sends the message from sender to the receiver client\
+    void *sendToRev(void *arg)
+        arg: contains the socket to connect to and the socket to send to
+        -sends the message from sender to the receiver client
     
-    void *revFromSender(void *arg)\
-        arg: contains the socket to connect to and the socket to send to\
-        -gets the message from sender and saves it in buffer to be sent to the receiver client\
+    void *revFromSender(void *arg)
+        arg: contains the socket to connect to and the socket to send to
+        -gets the message from sender and saves it in buffer to be sent to the receiver client
 
 ### Tests run
 - tested if server can handle >1 sender.
