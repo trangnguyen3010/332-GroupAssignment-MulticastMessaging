@@ -4,6 +4,6 @@ A network includes a server and multiple senders and receivers. Whenever a sende
 ### Launch
 In the terminal:
 make run
-./server
-./sender <hostname> <portnumber>
-./rev <hostname> <portnumber>
+./server\
+./sender <hostname> <portnumber>\
+./rev <hostname> <portnumber>\
