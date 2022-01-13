@@ -1,8 +1,6 @@
 run:
-	gcc server.c -o server
-	gcc sender.c -o sender
-	gcc rev.c -o rev
-	gcc senderDemo.c -o senderDemo
-
+	gcc -Wall -Wextra -o server server.c -lpthread
+	gcc -Wall -Wextra -o client client.c -lpthread
+	gcc -Wall -Wextra -o sender sender.c -lpthread
 clean:
 	ls | grep -v "\.\|Makefile" | xargs rm
