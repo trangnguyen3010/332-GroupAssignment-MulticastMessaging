@@ -6,4 +6,4 @@ In the terminal:\
 make run\
 ./server\
 ./sender hostname portnumber\
-./rev hostname portnumber\
+./rev hostname portnumber
